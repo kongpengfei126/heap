@@ -1,0 +1,213 @@
+# coding=utf-8
+from pymongo import MongoClient, database, collection
+
+mongo_url_local = "mongodb://用户名:密码@server IP/"
+
+
+class mongodb:
+    def __init__(self, url=None, database='iot_db'):
+        self.__mongourl = url if url is not None else mongo_url_local
+        # 通过mongoclient连接mongo server而非connection连接--mongoclient默认进行安全检测
+        self.__mongoclient = None
+        self.__mongodb = database
+        self.db_handle = self.__connect()
+
+    def __connect(self):
+        """
+        :return: 成功返回数据库句柄，失败返回None
+        """
+        self.__mongoclient = MongoClient(self.__mongourl)
+        # 连接数据库
+        try:
+            db_handle = database.Database(self.__mongoclient, self.__mongodb)
+            return db_handle
+        except Exception as e:
+            print('mongodb connect error:', e)
+            return None
+
+    def __del__(self):
+        # 关闭数据库服务器连接
+        if self.__mongoclient is not None:
+            self.__mongoclient.close()
+            print('__del__ callback')
+        else:
+            pass
+
+    def insert(self, table, records):
+        """
+        :param table: 数据库表名
+        :param records: 待插入的记录(一条/多条)
+        :return: bool type
+        """
+        ret = False
+        try:
+            if isinstance(records, list):
+                self.db_handle[table].insert_many(records)
+                ret = True
+            elif isinstance(records, dict):
+                self.db_handle[table].insert_one(records)
+                ret = True
+            else:
+                print('parameter type error!')
+                return False
+            return ret
+        except Exception as e:
+            print('insert error:', e)
+            return False
+
+    def delete(self, table, condition, flag=None):
+        """
+        :param table: 数据库表名
+        :param condition: 待删除记录的条件
+        :flag: flag== 'all' 清空表所有记录
+        :return: bool type
+        """
+        ret = False
+        try:
+            if isinstance(condition, list):
+                size = len(condition)
+                for i in range(0, size):
+                    self.db_handle[table].delete_many(condition[i])
+                    # self.db_handle[table].remove({query}) 等价于楼上
+                ret = True
+            elif isinstance(condition, dict):
+                self.db_handle[table].delete_many(condition)
+                ret = True
+            else:
+                print('parameter type error!')
+                ret = False
+            if flag == 'all':
+                self.db_handle[table].remove()
+            else:
+                pass
+            return ret
+        except Exception as e:
+            print('delete error:', e)
+            return False
+
+    def update(self, table, condition, result):
+        """
+        :param table:
+        :param condition: 待修改记录的条件 字典类型
+        :param result: 字段名：更新后结果 字典类型
+        :return: bool type
+        """
+        try:
+            result = self.db_handle[table].update_many(condition, {"$set": result})
+            return result
+        except Exception as e:
+            print('delete error:', e)
+            return None
+
+    def find(self, table, action=None, condition=None, para=None, sort_type=1):
+        """
+        :param table: 数据库表
+        :param condition: 筛选条件
+        :param action: limit sort count distinct None依次为：
+        结果集数量限制  对满足过滤条件的记录排序 满足过滤条件的记录个数  满足过滤条件的不重复记录个数 查询该表下所有记录
+        :param para: action为limit时 para为数字 action为sort para为排序依据的字段
+        :param sort_type: action为sort para为排序依据的字段 sort_type == -1时降序排序 sort_type == 1 时升序排序
+        :return: 记录(列表)/某个字段列表/满足筛选条件的记录数量
+        """
+        ret = []
+        result = None
+        try:
+            if action == 'limit':
+                result = self.db_handle[table].find(condition).limit(para)
+            elif action == 'sort':
+                # 升序排序
+                if sort_type == 1:
+                    result = self.db_handle[table].find(condition).sort(para)
+                # 降序排序
+                elif sort_type == -1:
+                    result = self.db_handle[table].find(condition).sort(para, -1)
+                # 参数错误
+                else:
+                    ret = None
+                    print('sort_type error!')
+            elif action == 'count':
+                result = self.db_handle[table].find(condition).count(True)
+                return result
+            elif action == 'distinct':
+                result = self.db_handle[table].find(condition).distinct(para)
+                return result
+            elif action == 'None':
+                if condition is None:
+                    result = self.db_handle[table].find()
+                else:
+                    result = self.db_handle[table].find(condition)
+            else:
+                ret = None
+                print('parameter type error!')
+            if result is not None:
+                for i in result:
+                    ret.append(i)
+            return ret
+        except Exception as e:
+            print('find error:', e)
+            return None
+
+    def find_count(self, table, condition):
+        """
+        满足过滤条件的记录个数
+        :param table:  表
+        :param condition:  过滤条件
+        :return:
+        """
+        try:
+            result = self.db_handle[table].count_documents(condition)
+            return result
+        except Exception as e:
+            print('find_count error:', e)
+            return None
+
+    def table_count(self, table):
+        """
+        求表记录个数
+        :param table: 表
+        :return:
+        """
+        try:
+            result = self.db_handle[table].count(True)
+            return result
+        except Exception as e:
+            print('table_count error:', e)
+            return None
+
+
+if __name__ == '__main__':
+    mongo_db = mongodb()
+    # -----------插入测试---------
+    datas = {'name': 'upt2', 'id': 'reach', 'age': 12306.7}
+    print('insert', mongo_db.insert('test_lijietao', datas))
+    print('insert', mongo_db.insert('test_lijietao', [{'name': 'upt3', 'id': 'reach', 'age': 12306.8},
+                                                      {'name': 'upt4', 'id': 'reach', 'age': 12306.9},
+                                                      {'name': 'upt5', 'id': 'reach', 'age': 12307.0},
+                                                      {'name': 'upt6', 'id': 'reach', 'age': 12308.0},
+                                                      {'name': 'upt6', 'id': 'reach', 'age': 12308.1},
+                                                      {'name': 'upt6', 'id': 'reach', 'age': 12308.2},
+                                                      {'name': 'upt6', 'id': 'reach', 'age': 12308.3}]))
+    # ----------删除测试----------
+    print('delete', mongo_db.delete('test_lijietao', {'name': 'upt1'}))
+    print('delete', mongo_db.delete('test_lijietao', [{'name': 'upt2'}, {'name': 'upt3'}]))
+
+    # ----------修改测试----------
+    print('update', mongo_db.update('test_lijietao', {'name': 'upt4'}, {'age': 12304.0, 'name': 'change4'}))
+
+    # ----------查询测试----------
+    mongo_db.insert('test_lijietao', [{'name': 'upt7', 'id': 'reach', 'age': 12308.1},
+                                      {'name': 'upt7', 'id': 'reach', 'age': 12308.2},
+                                      {'name': 'upt7', 'id': 'reach', 'age': 12308.3},
+                                      {'name': 'upt7', 'id': 'reach', 'age': 12308.4},
+                                      {'name': 'upt7', 'id': 'reach', 'age': 12308.5},
+                                      {'name': 'upt7', 'id': 'reach', 'age': 12308.6},
+                                      {'name': 'upt7', 'id': 'reach', 'age': 12308.7}])
+    print('find', mongo_db.find('test_lijietao','limit', {'name': 'upt7'}, 2))
+    print('find', mongo_db.find('test_lijietao', 'sort', {'name': 'upt7'}, 'age', 1))
+    print('find', mongo_db.find('test_lijietao', 'sort', {'name': 'upt7'}, 'age',  -1))
+    print('find', mongo_db.find('test_lijietao', 'count', {'name': 'upt7'}))
+    print('find', mongo_db.find('test_lijietao', 'distinct', {'name': 'upt7'},  'age'))
+    print('find', mongo_db.find('test_lijietao', 'None'))
+    print('find', mongo_db.find('test_lijietao', 'None', {"age": {"$lt": 12306.0}}))
+    print('find', mongo_db.find_count('test_lijietao', {'name': 'upt7'}))
+    print('table_count', mongo_db.table_count('test_lijietao'))
